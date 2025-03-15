@@ -1,7 +1,16 @@
 import axios from "axios";
 import dotenv from "dotenv";
-import multer from "multer";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import Farmer from "../models/Farmer.js";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 dotenv.config();
 const generateTreatmentPlan = async (diseases) => {
   try {
@@ -39,6 +48,17 @@ const identifyPlantDisease = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "no image uploaded" });
     }
+    const { farmerId } = req.body; // Assuming farmerId is sent in request
+    if (!farmerId) {
+      return res.status(400).json({ error: "Farmer ID is required" });
+    }
+
+    // Save image to server
+    const uploadDir = path.join(__dirname, "..", "uploads", "plant-images");
+    await fs.mkdir(uploadDir, { recursive: true });
+    const fileName = `${Date.now()}-${req.file.originalname}`;
+    const filePath = path.join(uploadDir, fileName);
+    await fs.writeFile(filePath, req.file.buffer);
     const apiKey = process.env.API_KEY;
     const API_URL = "https://api.plant.id/v2/health_assessment";
     const response = await axios.post(
@@ -61,10 +81,41 @@ const identifyPlantDisease = async (req, res) => {
         response.data.health_assessment.diseases
       ),
     };
-    res.status(200).json(enhancedResponse);
+    const farmer = await Farmer.findById(farmerId);
+    if (!farmer) {
+      return res.status(404).json({ error: "Farmer not found" });
+    }
+
+    farmer.healthAssessments.push({
+      imageUrl: filePath,
+      results: enhancedResponse,
+    });
+
+    await farmer.save();
+
+    res.status(200).json({
+      ...enhancedResponse,
+      assessmentId:
+        farmer.healthAssessments[farmer.healthAssessments.length - 1]._id,
+    });
+  } catch (error) {
+    console.error("Error in plant disease identification:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+const getFarmerAssessments = async (req, res) => {
+  try {
+    const { farmerId } = req.params;
+    const farmer = await Farmer.findById(farmerId);
+
+    if (!farmer) {
+      return res.status(404).json({ error: "Farmer not found" });
+    }
+
+    res.status(200).json(farmer.healthAssessments);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
-export { identifyPlantDisease };
+export { identifyPlantDisease, getFarmerAssessments };

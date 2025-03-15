@@ -1,14 +1,37 @@
 import express from "express";
+import farmerRoutes from "./Routes/farmerRoutes.js";
+import cors from "cors";
 import dotenv from "dotenv";
-import healthAssessmentRoute from "./Routes/health_Assessment_Route.js";
+import mongoose from "mongoose";
 
 dotenv.config();
 
 const app = express();
-app.use("/api", healthAssessmentRoute);
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static("uploads"));
+
+// MongoDB connection
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGO_URI);
+    console.log(`MongoDB Connected: ${conn.connection.host}`);
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+// Connect to database
+connectDB();
+
+app.use("/api", farmerRoutes);
 app.get("/", (req, res) => {
   res.send("Hello World");
 });
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Server is running on port ${process.env.PORT || 3000}`);
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
